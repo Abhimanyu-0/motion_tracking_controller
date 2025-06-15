@@ -16,12 +16,13 @@ state_estimator:
     model:
       base_name: "pelvis"
       six_dof_contact_names: [ "LL_FOOT", "LR_FOOT" ]
-#    estimation:
-#      contact:
-#        height_sensor_noise: 1e10
-#      position:
-#        noise: 1e-2
-#        topic: "/glim/odom"
+    estimation:
+      contact:
+        height_sensor_noise: 1e10
+      position:
+        noise: 1e-2
+        topic: "/mid360"
+        frame_id: "mid360_link"
 
 standby_controller:
   ros__parameters:
@@ -54,7 +55,7 @@ standby_controller:
 walking_controller:
   ros__parameters:
     policy:
-      path: "config/g1/getup.onnx"
+      path: "config/g1/policy.onnx"
     motion:
       reference_body: "torso_link"
       body_names: [ 'pelvis',
