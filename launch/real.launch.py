@@ -140,7 +140,7 @@ def generate_launch_description():
     )
 
     rosbag2 = ExecuteProcess(
-        cmd=['ros2', 'bag', 'record', '-s', 'mcap', '-a'],
+        cmd=['ros2', 'bag', 'record', '-s', 'mcap', '-a', '-x', '^/(api|lowcmd).*'],
         output='screen'
     )
 
