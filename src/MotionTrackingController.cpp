@@ -203,8 +203,8 @@ controller_interface::return_type MotionTrackingController::update(const rclcpp:
       kd_23 << 2.0, 2.0, 2.0, 4.0, 2.0, 2.0,  // left leg
                2.0, 2.0, 2.0, 4.0, 2.0, 2.0,  // right leg
                4.0, 4.0, 4.0,                 // torso
-               5.0, 5.0, 5.0, 5.0,            // left arm
-               5.0, 5.0, 5.0, 5.0;            // right arm
+               6.0, 6.0, 6.0, 6.0,            // left arm
+               6.0, 6.0, 6.0, 6.0;            // right arm
 
       // Expand to 29 DOFs (add low gains for wrist joints to keep them compliant)
       vector_t kp_29 = expand23DofsTo29(kp_23);
