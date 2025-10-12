@@ -76,6 +76,9 @@ class GeneralistProprioceptiveObs : public ObservationTerm {
   vector_t lastAction_{vector_t::Zero(23)};
 
   vector3_t quaternionToEuler(const quaternion_t& q) const;
+
+  // Extract 23 DOFs from 29 DOFs (skip wrist joints at indices 19-21 and 26-28)
+  vector_t extract23Dofs(const vector_t& dofs_29) const;
 };
 
 /**

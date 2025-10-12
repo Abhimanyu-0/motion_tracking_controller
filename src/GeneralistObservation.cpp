@@ -78,22 +78,33 @@ vector3_t GeneralistProprioceptiveObs::quaternionToEuler(const quaternion_t& q) 
 vector_t GeneralistProprioceptiveObs::evaluate() {
   vector_t obs(74);
 
-  // Get robot state from model (inherited from ObservationTerm)
-  const auto& state = model_->getState();
+  // Get base rotation once (used for ang_vel and euler)
+  quaternion_t base_quat = model_->getBaseRotation();
 
-  // Angular velocity (3) × 0.25
-  obs.segment<3>(0) = state.angularVelocity * 0.25;
+  // Get angular velocity from generalized velocity (indices 3-5)
+  // NOTE: Generalized velocity is in world frame, transform to body frame like IMU
+  vector3_t ang_vel_world = model_->getGeneralizedVelocity().segment<3>(3);
+  vector3_t ang_vel_body = base_quat.inverse() * ang_vel_world;
+  obs.segment<3>(0) = ang_vel_body * 0.25;
 
   // Roll, pitch only (2) - no yaw for orientation invariance
-  vector3_t euler = quaternionToEuler(state.baseOrientation);
+  vector3_t euler = quaternionToEuler(base_quat);
   obs(3) = euler.x();  // roll
   obs(4) = euler.y();  // pitch
 
   // Joint positions relative to default (23)
-  obs.segment(5, 23) = state.jointPositions - defaultJointPos_;
+  // Generalized position has: [pos(3), quat(4), joints(29)]
+  // Extract 23 DOFs from 29 DOFs (skip wrist joints)
+  vector_t joint_pos_29 = model_->getGeneralizedPosition().tail(29);
+  vector_t joint_pos = extract23Dofs(joint_pos_29);
+  obs.segment(5, 23) = joint_pos - defaultJointPos_;
 
   // Joint velocities (23) × 0.05, ankles zeroed
-  vector_t scaled_vel = state.jointVelocities * 0.05;
+  // Generalized velocity has: [lin_vel(3), ang_vel(3), joint_vel(29)]
+  vector_t joint_vel_29 = model_->getGeneralizedVelocity().tail(29);
+  vector_t joint_vel = extract23Dofs(joint_vel_29);
+  vector_t scaled_vel = joint_vel * 0.05;
+
   // Zero out ankle velocities (indices 4, 5, 10, 11)
   scaled_vel(4) = 0.0;   // left_ankle_pitch
   scaled_vel(5) = 0.0;   // left_ankle_roll
@@ -105,6 +116,20 @@ vector_t GeneralistProprioceptiveObs::evaluate() {
   obs.segment(51, 23) = lastAction_;
 
   return obs;
+}
+
+vector_t GeneralistProprioceptiveObs::extract23Dofs(const vector_t& dofs_29) const {
+  // Extract 23 DOFs from 29 DOFs by skipping wrist joints
+  // Wrist joints are at indices: 19-21 (left wrist), 26-28 (right wrist)
+  vector_t dofs_23(23);
+
+  // Copy first 19 joints (legs + torso + left arm up to elbow)
+  dofs_23.segment(0, 19) = dofs_29.segment(0, 19);
+
+  // Skip left wrist (indices 19-21), copy right arm (indices 22-25)
+  dofs_23.segment(19, 4) = dofs_29.segment(22, 4);
+
+  return dofs_23;
 }
 
 }  // namespace legged

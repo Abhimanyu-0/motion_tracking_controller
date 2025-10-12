@@ -4,10 +4,11 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
+    ExecuteProcess,
     DeclareLaunchArgument,
     OpaqueFunction,
     SetLaunchConfiguration,
-    IncludeLaunchDescription
+    IncludeLaunchDescription,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -100,7 +101,7 @@ def setup_controllers(context):
         kv_pairs.append(('walking_controller.motion.motion_path', abs_motion_path))
     if ext_pos_corr.lower() in ["true", "1", "yes"]:
         kv_pairs.append(('state_estimator.estimation.contact.height_sensor_noise', 1e10))
-        kv_pairs.append(('state_estimator.estimation.position.topic', "/mid360"))
+        kv_pairs.append(('state_estimator.estimation.position.topic', "/glim/odom"))
 
     controllers_config_path = f'config/{robot_type_value}/controllers.yaml'
     temp_controllers_config_path = generate_temp_config(
@@ -114,8 +115,8 @@ def setup_controllers(context):
         value=temp_controllers_config_path
     )
 
-    active_list = ["state_estimator", "walking_controller"]
-    inactive_list = ["standby_controller"]
+    active_list = ["state_estimator", "standby_controller"]
+    inactive_list = ["walking_controller"]
 
     active_spawner = control_spawner(active_list)
     inactive_spawner = control_spawner(inactive_list, inactive=True)
@@ -125,6 +126,7 @@ def setup_controllers(context):
 
 def generate_launch_description():
     robot_type = LaunchConfiguration('robot_type')
+    network_interface = LaunchConfiguration('network_interface')
     urdf_name = PythonExpression(["'g1' if '", robot_type, "' == 'g1' else 'sdk1'"])
 
     robot_description_command = Command([
@@ -137,7 +139,10 @@ def generate_launch_description():
             "robot.xacro"
         ]),
         " ", "robot_type:=", robot_type,
-        " ", "simulation:=", "mujoco"])
+        " ", "simulation:=", "false",
+        " ", "network_interface:=", network_interface
+    ])
+
     robot_description = {"robot_description": robot_description_command}
 
     node_robot_state_publisher = Node(
@@ -150,18 +155,13 @@ def generate_launch_description():
         }],
     )
 
-    mujoco_simulator = Node(
-        package='mujoco_sim_ros2',
-        executable='mujoco_sim',
-        parameters=[
-            {"model_package": "unitree_description",
-             "model_file": PythonExpression(["'/mjcf/", robot_type, ".xml'"]),
-             "physics_plugins": ["mujoco_ros2_control::MujocoRos2ControlPlugin"],
-             },
-            robot_description,
-            LaunchConfiguration('controllers_yaml'),
-        ],
-        output='screen')
+    control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[robot_description, LaunchConfiguration('controllers_yaml')],
+        output="both",
+        respawn=True,
+    )
 
     wandb = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), "/wandb.launch.py"]),
@@ -175,6 +175,32 @@ def generate_launch_description():
 
     controllers_opaque_func = OpaqueFunction(function=setup_controllers)
 
+    # Exclude all Unitree topics... it should start from the same namespace, fuck Unitree!
+    exclude_regex = (
+        r'(/EstimatorData|/SymState(_back)?|/api/.*'
+        r'|/arm/action/state|/arm_sdk'
+        r'|/audio_msg|/audiosender|/config_change_status'
+        r'|/dex3/(left|right)/(cmd|state)'
+        r'|/frontvideostream|/gnss'
+        r'|/gpt_(cmd|state)|/gptflowfeedback'
+        r'|/lf/(bmsstate|dex3/(left|right)/state|lowstate|mainboardstate|'
+        r'odommodestate|secondary_imu|sportmodestate)'
+        r'|/low(cmd|state)|/multiplestate|/odommodestate'
+        r'|/parameter_events|/public_network_status|/rosout'
+        r'|/rtc/(state|status)|/secondary_imu|/selftest'
+        r'|/servicestate(activate)?|/slam_info|/sportmodestate'
+        r'|/utlidar/range_info|/videohub/inner'
+        r'|/webrtc(req|res)|/wirelesscontroller)'
+    )
+
+    rosbag2 = ExecuteProcess(
+        cmd=[
+            'ros2', 'bag', 'record', '-s', 'mcap', '-a',  # record all topics
+            '--exclude', exclude_regex,  # skip those that match the regex
+        ],
+        output='screen',
+    )
+
     teleop = PathJoinSubstitution([
         FindPackageShare('unitree_bringup'),
         'launch',
@@ -183,6 +209,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('robot_type', default_value='g1'),
+        DeclareLaunchArgument('network_interface'),
         DeclareLaunchArgument(
             'policy_path',
             default_value='',
@@ -191,7 +218,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'start_step',
             default_value='0',
-            description='Integer start step for walking_controller.motion.start_step (single-motion only)'
+            description='Integer start step for walking_controller.motion.start_step'
         ),
         DeclareLaunchArgument(
             'use_generalist',
@@ -210,7 +237,10 @@ def generate_launch_description():
         ),
         wandb,
         controllers_opaque_func,
-        mujoco_simulator,
+        control_node,
         node_robot_state_publisher,
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(teleop))
+        rosbag2,
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(teleop)
+        )
     ])

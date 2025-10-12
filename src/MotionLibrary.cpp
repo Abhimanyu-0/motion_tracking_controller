@@ -61,12 +61,13 @@ void MotionLibrary::loadMotion(const std::string& npz_path) {
           root_pos_data[i * 3 + 2]
       );
 
-      // Root rotation [4] - quaternion (w, x, y, z)
+      // Root rotation [4] - quaternion stored as [x, y, z, w] in npz
+      // Eigen quaternion constructor is (w, x, y, z)
       frame.root_rot = quaternion_t(
-          root_rot_data[i * 4 + 0],  // w
-          root_rot_data[i * 4 + 1],  // x
-          root_rot_data[i * 4 + 2],  // y
-          root_rot_data[i * 4 + 3]   // z
+          root_rot_data[i * 4 + 3],  // w (from index 3)
+          root_rot_data[i * 4 + 0],  // x (from index 0)
+          root_rot_data[i * 4 + 1],  // y (from index 1)
+          root_rot_data[i * 4 + 2]   // z (from index 2)
       );
       frame.root_rot.normalize();
 
@@ -83,11 +84,12 @@ void MotionLibrary::loadMotion(const std::string& npz_path) {
           root_vel_data[i * 3 + 2]
       );
 
-      // Root angular velocity [4] (stored as quaternion derivative, use first 3)
+      // Root angular velocity - stored as [x, y, z, ?] (4D with last element unknown)
+      // Use first 3 elements
       frame.root_ang_vel = vector3_t(
-          root_ang_vel_data[i * 4 + 1],  // x
-          root_ang_vel_data[i * 4 + 2],  // y
-          root_ang_vel_data[i * 4 + 3]   // z
+          root_ang_vel_data[i * 4 + 0],  // x
+          root_ang_vel_data[i * 4 + 1],  // y
+          root_ang_vel_data[i * 4 + 2]   // z
       );
 
       frames_.push_back(frame);
